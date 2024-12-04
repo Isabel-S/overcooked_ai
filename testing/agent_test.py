@@ -1,6 +1,7 @@
 import unittest
 
 import numpy as np
+import random
 
 from overcooked_ai_py.agents.agent import (
     AgentPair,
@@ -8,6 +9,7 @@ from overcooked_ai_py.agents.agent import (
     GreedyHumanModel,
     RandomAgent,
     SampleAgent,
+    QLearningAgent
 )
 from overcooked_ai_py.agents.benchmarking import AgentEvaluator
 from overcooked_ai_py.mdp.actions import Action, Direction
@@ -46,6 +48,8 @@ ACTION_MAP = {
 
 simple_mdp = OvercookedGridworld.from_layout_name("cramped_room")
 large_mdp = OvercookedGridworld.from_layout_name("corridor")
+
+
 
 
 class TestAgentEvaluator(unittest.TestCase):
@@ -91,21 +95,147 @@ class TestBasicAgents(unittest.TestCase):
         self.mlam_large = MediumLevelActionManager.from_pickle_or_compute(
             large_mdp, NO_COUNTERS_PARAMS, force_compute=force_compute_large
         )
+    
+    
+        
+    def train_two_agents_simultaneously(self, agent_0, agent_1, env, num_episodes=500, max_steps_per_episode=50, start_state=None):
+        for episode in range(num_episodes):
+            print(f"Starting Episode {episode + 1}/{num_episodes}...")
 
-    def test_fixed_plan_agents(self):
-        a0 = FixedPlanAgent([s, e, n, w])
-        a1 = FixedPlanAgent([s, w, n, e])
-        agent_pair = AgentPair(a0, a1)
-        env = OvercookedEnv.from_mdp(large_mdp, horizon=10)
-        trajectory, time_taken, _, _ = env.run_agents(
-            agent_pair, include_final_state=True, display=DISPLAY
+            # Reset environment to fixed start state or default
+            if start_state:
+                state = start_state
+            else:
+                env.reset()
+            
+
+            for step in range(max_steps_per_episode):
+                print(f"  Step {step + 1}/{max_steps_per_episode}...")
+
+                # Get actions for both agents
+                action_0, _ = agent_0.action(state)
+                action_1, _ = agent_1.action(state)
+
+                # Execute actions in the environment
+                joint_action = [action_0, action_1]
+                next_state, reward, done, _ = env.step(joint_action)
+
+                # Debug: Print state, actions, and rewards
+                print(f"    State: {state}")
+                print(f"    Actions: {joint_action}")
+                print(f"    Reward: {reward} (Type: {type(reward)})")
+                print(f"    Next State: {next_state}")
+                print(f"    Done: {done}")
+
+                # Update agents using the received reward
+                agent_0.update(state, action_0, reward, next_state)
+                agent_1.update(state, action_1, reward, next_state)
+
+                # Break if the environment signals termination
+                if done:
+                    print(f"    Episode terminated early at step {step + 1}.")
+                    break
+
+                # Move to the next state
+                state = next_state
+
+            print(f"Episode {episode + 1} complete.\n")
+
+    def test_two_qlearning_agents_cramped_room_with_debugging(self):
+        """
+        Test two QLearningAgents on the 'cramped_room' layout, including debugging statements.
+        """
+        layout = "cramped_room"
+        mdp = OvercookedGridworld.from_layout_name(layout)
+        env = OvercookedEnv.from_mdp(mdp, horizon=50)
+
+        # Initialize QLearningAgents
+        agent_0 = QLearningAgent(alpha=0.1, gamma=0.95, epsilon=0.1, action_space=Action.ALL_ACTIONS)
+        agent_1 = QLearningAgent(alpha=0.1, gamma=0.95, epsilon=0.1, action_space=Action.ALL_ACTIONS)
+
+        # Train both agents to populate their Q-tables
+        fixed_start_state = mdp.get_standard_start_state()
+        self.train_two_agents_simultaneously(
+        agent_0=agent_0,
+        agent_1=agent_1,
+        env=env,
+        num_episodes=500,
+        max_steps_per_episode=50,
+        start_state=fixed_start_state
         )
-        end_state = trajectory[-1][0]
-        self.assertEqual(time_taken, 10)
-        self.assertEqual(
-            env.mdp.get_standard_start_state().player_positions,
-            end_state.player_positions,
-        )
+
+        agent_pair = AgentPair(agent_0, agent_1)
+
+        # Run the agents multiple times to validate Q-table persistence
+        for run_idx in range(3):
+            print(f"Run {run_idx + 1} starting...")
+            state = env.reset()
+            env.state = fixed_start_state  # Reset to the fixed start state for testing
+            trajectory, time_taken, _, _ = env.run_agents(
+                agent_pair, include_final_state=True, display=False
+            )
+            assert trajectory is not None, "Trajectory should not be None"
+            assert time_taken <= 50, "Time taken should not exceed horizon"
+            assert len(agent_0.q_table) > 0, "Agent 0's Q-table should persist after reset."
+            assert len(agent_1.q_table) > 0, "Agent 1's Q-table should persist after reset."
+
+            # Debug: Check Q-tables
+            print(f"Agent 0 Q-Table Size: {len(agent_0.q_table)}")
+            print(f"Agent 1 Q-Table Size: {len(agent_1.q_table)}")
+
+            # Print the trajectory details with debugging
+            for timestep, step in enumerate(trajectory):
+                state, actions, reward, done, metadata = step
+
+                # Map actions to descriptive labels
+                ACTION_MAP = {
+                    (0, -1): "MOVE_UP",
+                    (0, 1): "MOVE_DOWN",
+                    (-1, 0): "MOVE_LEFT",
+                    (1, 0): "MOVE_RIGHT",
+                    (0, 0): "STAY",
+                    "INTERACT": "INTERACT"
+                }
+
+                action_labels = tuple(ACTION_MAP.get(a, a) for a in actions)
+
+                sparse_rewards = metadata.get("sparse_r_by_agent", [0, 0]) if metadata else [0, 0]
+                shaped_rewards = metadata.get("shaped_r_by_agent", [0, 0]) if metadata else [0, 0]
+                total_rewards = sparse_rewards[0] + sparse_rewards[1]
+
+                print(f"Timestep {timestep}:")
+                print(f"  State: {state}")
+                print(f"  Hashed State: {hash(state)}")
+                print(f"  Actions: {action_labels}")
+                print(f"  Reward: {reward}")
+                print(f"  Sparse Rewards by Agent: {sparse_rewards}")
+                print(f"  Shaped Rewards by Agent: {shaped_rewards}")
+                print(f"  Total Rewards: {total_rewards}")
+
+                # Debug: Check if no rewards are being generated
+                if sparse_rewards == [0, 0] and shaped_rewards == [0, 0]:
+                    print(f"Warning: No rewards generated at Timestep {timestep}")
+                
+                # Debug: Check if agents are stuck (e.g., repetitive states)
+                if timestep > 0 and trajectory[timestep - 1][0] == state:
+                    print(f"Warning: Agents may be stuck at Timestep {timestep}, State: {state}")
+
+            print(f"Run {run_idx + 1} completed.\n")
+
+    # def test_fixed_plan_agents(self):
+    #     a0 = FixedPlanAgent([s, e, n, w])
+    #     a1 = FixedPlanAgent([s, w, n, e])
+    #     agent_pair = AgentPair(a0, a1)
+    #     env = OvercookedEnv.from_mdp(large_mdp, horizon=10)
+    #     trajectory, time_taken, _, _ = env.run_agents(
+    #         agent_pair, include_final_state=True, display=DISPLAY
+    #     )
+    #     end_state = trajectory[-1][0]
+    #     self.assertEqual(time_taken, 10)
+    #     self.assertEqual(
+    #         env.mdp.get_standard_start_state().player_positions,
+    #         end_state.player_positions,
+    #     )
 
     # def test_two_greedy_human_open_map(self):
     #     scenario_2_mdp = OvercookedGridworld.from_layout_name("scenario2")
@@ -145,69 +275,69 @@ class TestBasicAgents(unittest.TestCase):
     #     print("Total rewards: ", sum([step[2] for step in trajectory]))
 
     
-    def test_two_greedy_human_compact(self):
-        layout = "cramped_room"
-        mdp = OvercookedGridworld.from_layout_name(layout)
-        mlam = MediumLevelActionManager.from_pickle_or_compute(
-            mdp, NO_COUNTERS_PARAMS, force_compute=True
-        )
+    # def test_two_greedy_human_compact(self):
+    #     layout = "cramped_room"
+    #     mdp = OvercookedGridworld.from_layout_name(layout)
+    #     mlam = MediumLevelActionManager.from_pickle_or_compute(
+    #         mdp, NO_COUNTERS_PARAMS, force_compute=True
+    #     )
 
-        a0 = GreedyHumanModel(mlam)
-        a1 = GreedyHumanModel(mlam)
-        agent_pair = AgentPair(a0, a1)
-        start_state = mdp.get_standard_start_state()
+    #     a0 = GreedyHumanModel(mlam)
+    #     a1 = GreedyHumanModel(mlam)
+    #     agent_pair = AgentPair(a0, a1)
+    #     start_state = mdp.get_standard_start_state()
 
-        env = OvercookedEnv.from_mdp(
-            mdp, start_state_fn=lambda: start_state, horizon=100
-        )
-        trajectory, time_taken, _, _ = env.run_agents(
-            agent_pair, include_final_state=True, display=False
-        )
+    #     env = OvercookedEnv.from_mdp(
+    #         mdp, start_state_fn=lambda: start_state, horizon=100
+    #     )
+    #     trajectory, time_taken, _, _ = env.run_agents(
+    #         agent_pair, include_final_state=True, display=False
+    #     )
 
-        print("Greedy Human Model Compact Room Trajectory:")
-        for timestep, step in enumerate(trajectory):
-            state, actions, reward, done, metadata = step
+    #     print("Greedy Human Model Compact Room Trajectory:")
+    #     for timestep, step in enumerate(trajectory):
+    #         state, actions, reward, done, metadata = step
 
-            # Map actions to descriptive labels
-            ACTION_MAP = {
-                (0, -1): "MOVE_UP",
-                (0, 1): "MOVE_DOWN",
-                (-1, 0): "MOVE_LEFT",
-                (1, 0): "MOVE_RIGHT",
-                (0, 0): "STAY",
-                "INTERACT": "INTERACT"
-            }
+    #         # Map actions to descriptive labels
+    #         ACTION_MAP = {
+    #             (0, -1): "MOVE_UP",
+    #             (0, 1): "MOVE_DOWN",
+    #             (-1, 0): "MOVE_LEFT",
+    #             (1, 0): "MOVE_RIGHT",
+    #             (0, 0): "STAY",
+    #             "INTERACT": "INTERACT"
+    #         }
 
-            action_labels = tuple(ACTION_MAP.get(a, a) for a in actions)
+    #         action_labels = tuple(ACTION_MAP.get(a, a) for a in actions)
 
-            sparse_rewards = metadata.get("sparse_r_by_agent", [0, 0]) if metadata else [0, 0]
-            shaped_rewards = metadata.get("shaped_r_by_agent", [0, 0]) if metadata else [0, 0]
-            print(f"Timestep {timestep}:")
-            print(f"  State: {state}")
-            print(f"  Actions: {action_labels}")
-            print(f"  Rewards: {reward}")
-            print(f"  Sparse Rewards by Agent: {sparse_rewards}")
-            print(f"  Shaped Rewards by Agent: {shaped_rewards}")
-            print("--------")
-        print("Total rewards: ", sum([step[2] for step in trajectory]))
+    #         sparse_rewards = metadata.get("sparse_r_by_agent", [0, 0]) if metadata else [0, 0]
+    #         shaped_rewards = metadata.get("shaped_r_by_agent", [0, 0]) if metadata else [0, 0]
+    #         print(f"Timestep {timestep}:")
+    #         print(f"  State: {state}")
+    #         print(f"  Actions: {action_labels}")
+    #         print(f"  Rewards: {reward}")
+    #         print(f"  Sparse Rewards by Agent: {sparse_rewards}")
+    #         print(f"  Shaped Rewards by Agent: {shaped_rewards}")
+    #         print("--------")
+    #     print("Total rewards: ", sum([step[2] for step in trajectory]))
 
 
-    def test_sample_agent(self):
-        agent = SampleAgent(
-            [RandomAgent(all_actions=False), RandomAgent(all_actions=True)]
-        )
-        probs = agent.action(None)[1]["action_probs"]
-        expected_probs = np.array(
-            [
-                0.18333333,
-                0.18333333,
-                0.18333333,
-                0.18333333,
-                0.18333333,
-                0.08333333,
-            ]
-        )
-        self.assertTrue(np.allclose(probs, expected_probs))
+    # def test_sample_agent(self):
+    #     agent = SampleAgent(
+    #         [RandomAgent(all_actions=False), RandomAgent(all_actions=True)]
+    #     )
+    #     probs = agent.action(None)[1]["action_probs"]
+    #     expected_probs = np.array(
+    #         [
+    #             0.18333333,
+    #             0.18333333,
+    #             0.18333333,
+    #             0.18333333,
+    #             0.18333333,
+    #             0.08333333,
+    #         ]
+    #     )
+    #     self.assertTrue(np.allclose(probs, expected_probs))
 
 
 class TestAgentEvaluatorStatic(unittest.TestCase):

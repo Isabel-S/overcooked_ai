@@ -2,6 +2,7 @@ import itertools
 import math
 import os
 from collections import defaultdict
+import random
 
 import dill
 import numpy as np
@@ -600,6 +601,36 @@ class SampleAgent(Agent):
             action_probs += agent.action(state)[1]["action_probs"]
         action_probs = action_probs / len(self.agents)
         return Action.sample(action_probs), {"action_probs": action_probs}
+
+class QLearningAgent(Agent):
+
+    def __init__(self, alpha = 0.1, gamma = 0.95, epsilon = 0.1, action_space = None):
+        self.alpha = alpha
+        self.gamma = gamma
+        self.epsilon = epsilon
+        self.q_table = defaultdict(float)
+        self.action_space = action_space or Action.ALL_ACTIONS
+
+    def action(self, state):
+        state_hash = state.external_hash()
+        if random.random() < self.epsilon:
+            action = random.choice(self.action_space)
+        else:
+            action = max(self.action_space, key = lambda a: self.q_table[(state_hash, a)])
+        return action, {"q_value": self.q_table[(state_hash, action)]}
+
+    def update(self, state, action, reward, next_state):
+        state_hash = state.external_hash()
+        next_state_hash = next_state.external_hash()
+
+        max_next_q = max([self.q_table[(next_state_hash, a)] for a in self.action_space], default = 0.0)
+
+        current_q = self.q_table[(state_hash, action)]
+        self.q_table[(state_hash, action)] = current_q + self.alpha * (reward + self.gamma * max_next_q - current_q)
+
+    def reset(self):
+        self.agent_index = None
+        self.mdp = None
 
 
 # Deprecated. Need to fix Heuristic to work with the new MDP to reactivate Planning
