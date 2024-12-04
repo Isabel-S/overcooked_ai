@@ -889,6 +889,23 @@ class OvercookedState(object):
     @property
     def bonus_orders(self):
         return sorted(self._bonus_orders)
+    
+    def external_hash(self):
+        # players (including position, orientation, and held objects)
+        # state of pot that cooks soup (# of onions/ingredients, cooking time)
+
+        player_hash = hash(tuple([hash(player) for player in self.players]))
+
+        # check if there is a soup object
+        # if there is, get # of ingredients, and cooking tick
+        # hash: [] for no soup, [num_ingredients, cooking_tick] for soup
+        soup_hash = []
+        for obj in self.objects.values():
+            if obj.name == "soup":
+                soup_hash = [len(obj.ingredients), obj._cooking_tick]
+        
+        state_hash = hash((player_hash, tuple(soup_hash)))
+        return state_hash
 
     def has_object(self, pos):
         return pos in self.objects

@@ -117,6 +117,80 @@ class TestBasicAgents(unittest.TestCase):
             agent_pair, include_final_state=True, display=DISPLAY
         )
 
+        # output trajectory
+        print("Greedy Human Model Open Map Trajectory")
+        for timestep, step in enumerate(trajectory):
+            state, actions, reward, done, metadata = step
+
+            # Map actions to descriptive labels
+            ACTION_MAP = {
+                (0, -1): "MOVE_UP",
+                (0, 1): "MOVE_DOWN",
+                (-1, 0): "MOVE_LEFT",
+                (1, 0): "MOVE_RIGHT",
+                (0, 0): "STAY",
+                "INTERACT": "INTERACT"
+            }
+
+            action_labels = tuple(ACTION_MAP.get(a, a) for a in actions)
+
+            sparse_rewards = metadata.get("sparse_r_by_agent", [0, 0]) if metadata else [0, 0]
+            shaped_rewards = metadata.get("shaped_r_by_agent", [0, 0]) if metadata else [0, 0]
+            print(f"Timestep {timestep}:")
+            print(f"  State: {state}")
+            print(f"  Actions: {action_labels}")
+            print(f"  Sparse Rewards by Agent: {sparse_rewards}")
+            print(f"  Shaped Rewards by Agent: {shaped_rewards}")
+            print("--------")
+    
+    def test_two_greedy_human_compact(self):
+        layout = "cramped_room"
+        mdp = OvercookedGridworld.from_layout_name(layout)
+        mlam = MediumLevelActionManager.from_pickle_or_compute(
+            mdp, NO_COUNTERS_PARAMS, force_compute=True
+        )
+
+        a0 = GreedyHumanModel(mlam)
+        a1 = GreedyHumanModel(mlam)
+        agent_pair = AgentPair(a0, a1)
+        start_state = mdp.get_standard_start_state()
+
+        env = OvercookedEnv.from_mdp(
+            mdp, start_state_fn=lambda: start_state, horizon=100
+        )
+        trajectory, time_taken, _, _ = env.run_agents(
+            agent_pair, include_final_state=True, display=False
+        )
+
+        print("Greedy Human Model Compact Room Trajectory:")
+        for timestep, step in enumerate(trajectory):
+            state, actions, reward, done, metadata = step
+
+            # Map actions to descriptive labels
+            ACTION_MAP = {
+                (0, -1): "MOVE_UP",
+                (0, 1): "MOVE_DOWN",
+                (-1, 0): "MOVE_LEFT",
+                (1, 0): "MOVE_RIGHT",
+                (0, 0): "STAY",
+                "INTERACT": "INTERACT"
+            }
+
+            action_labels = tuple(ACTION_MAP.get(a, a) for a in actions)
+
+            sparse_rewards = metadata.get("sparse_r_by_agent", [0, 0]) if metadata else [0, 0]
+            shaped_rewards = metadata.get("shaped_r_by_agent", [0, 0]) if metadata else [0, 0]
+            print(f"Timestep {timestep}:")
+            print(f"  State: {state}")
+            print("  External Hash:", state.external_hash())
+            print(f"  Actions: {action_labels}")
+            print(f"  Rewards: {reward}")
+            print(f"  Sparse Rewards by Agent: {sparse_rewards}")
+            print(f"  Shaped Rewards by Agent: {shaped_rewards}")
+            print("--------")
+        print("Total rewards: ", sum([step[2] for step in trajectory]))
+
+
     def test_sample_agent(self):
         agent = SampleAgent(
             [RandomAgent(all_actions=False), RandomAgent(all_actions=True)]
