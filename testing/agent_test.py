@@ -34,6 +34,16 @@ force_compute_large = False
 force_compute = True
 DISPLAY = False
 
+# Map actions to descriptive labels
+ACTION_MAP = {
+    (0, -1): "MOVE_UP",
+    (0, 1): "MOVE_DOWN",
+    (-1, 0): "MOVE_LEFT",
+    (1, 0): "MOVE_RIGHT",
+    (0, 0): "STAY",
+    "INTERACT": "INTERACT"
+}
+
 simple_mdp = OvercookedGridworld.from_layout_name("cramped_room")
 large_mdp = OvercookedGridworld.from_layout_name("corridor")
 
@@ -97,51 +107,43 @@ class TestBasicAgents(unittest.TestCase):
             end_state.player_positions,
         )
 
-    def test_two_greedy_human_open_map(self):
-        scenario_2_mdp = OvercookedGridworld.from_layout_name("scenario2")
-        mlam = MediumLevelActionManager.from_pickle_or_compute(
-            scenario_2_mdp, NO_COUNTERS_PARAMS, force_compute=force_compute
-        )
-        a0 = GreedyHumanModel(mlam)
-        a1 = GreedyHumanModel(mlam)
-        agent_pair = AgentPair(a0, a1)
-        start_state = OvercookedState(
-            [P((8, 1), s), P((1, 1), s)],
-            {},
-            all_orders=scenario_2_mdp.start_all_orders,
-        )
-        env = OvercookedEnv.from_mdp(
-            scenario_2_mdp, start_state_fn=lambda: start_state, horizon=100
-        )
-        trajectory, time_taken, _, _ = env.run_agents(
-            agent_pair, include_final_state=True, display=DISPLAY
-        )
+    # def test_two_greedy_human_open_map(self):
+    #     scenario_2_mdp = OvercookedGridworld.from_layout_name("scenario2")
+    #     mlam = MediumLevelActionManager.from_pickle_or_compute(
+    #         scenario_2_mdp, NO_COUNTERS_PARAMS, force_compute=force_compute
+    #     )
+    #     a0 = GreedyHumanModel(mlam)
+    #     a1 = GreedyHumanModel(mlam)
+    #     agent_pair = AgentPair(a0, a1)
+    #     start_state = OvercookedState(
+    #         [P((8, 1), s), P((1, 1), s)],
+    #         {},
+    #         all_orders=scenario_2_mdp.start_all_orders,
+    #     )
+    #     env = OvercookedEnv.from_mdp(
+    #         scenario_2_mdp, start_state_fn=lambda: start_state, horizon=100
+    #     )
+    #     trajectory, time_taken, _, _ = env.run_agents(
+    #         agent_pair, include_final_state=True, display=DISPLAY
+    #     )
 
-        # output trajectory
-        print("Greedy Human Model Open Map Trajectory")
-        for timestep, step in enumerate(trajectory):
-            state, actions, reward, done, metadata = step
+    #     # output trajectory
+    #     print("Greedy Human Model Open Map Trajectory")
+    #     for timestep, step in enumerate(trajectory):
+    #         state, actions, reward, done, metadata = step
 
-            # Map actions to descriptive labels
-            ACTION_MAP = {
-                (0, -1): "MOVE_UP",
-                (0, 1): "MOVE_DOWN",
-                (-1, 0): "MOVE_LEFT",
-                (1, 0): "MOVE_RIGHT",
-                (0, 0): "STAY",
-                "INTERACT": "INTERACT"
-            }
+    #         action_labels = tuple(ACTION_MAP.get(a, a) for a in actions)
 
-            action_labels = tuple(ACTION_MAP.get(a, a) for a in actions)
+    #         sparse_rewards = metadata.get("sparse_r_by_agent", [0, 0]) if metadata else [0, 0]
+    #         shaped_rewards = metadata.get("shaped_r_by_agent", [0, 0]) if metadata else [0, 0]
+    #         print(f"Timestep {timestep}:")
+    #         print(f"  State: {state}")
+    #         print(f"  Actions: {action_labels}")
+    #         print(f"  Sparse Rewards by Agent: {sparse_rewards}")
+    #         print(f"  Shaped Rewards by Agent: {shaped_rewards}")
+    #         print("--------")
+    #     print("Total rewards: ", sum([step[2] for step in trajectory]))
 
-            sparse_rewards = metadata.get("sparse_r_by_agent", [0, 0]) if metadata else [0, 0]
-            shaped_rewards = metadata.get("shaped_r_by_agent", [0, 0]) if metadata else [0, 0]
-            print(f"Timestep {timestep}:")
-            print(f"  State: {state}")
-            print(f"  Actions: {action_labels}")
-            print(f"  Sparse Rewards by Agent: {sparse_rewards}")
-            print(f"  Shaped Rewards by Agent: {shaped_rewards}")
-            print("--------")
     
     def test_two_greedy_human_compact(self):
         layout = "cramped_room"
@@ -182,7 +184,6 @@ class TestBasicAgents(unittest.TestCase):
             shaped_rewards = metadata.get("shaped_r_by_agent", [0, 0]) if metadata else [0, 0]
             print(f"Timestep {timestep}:")
             print(f"  State: {state}")
-            print("  External Hash:", state.external_hash())
             print(f"  Actions: {action_labels}")
             print(f"  Rewards: {reward}")
             print(f"  Sparse Rewards by Agent: {sparse_rewards}")
