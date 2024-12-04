@@ -178,16 +178,19 @@ class TestBasicAgents(unittest.TestCase):
 
                 # Map actions to descriptive labels
                 ACTION_MAP = {
-                    (0, -1): "MOVE_LEFT",
-                    (0, 1): "MOVE_RIGHT",
-                    (-1, 0): "MOVE_UP",
-                    (1, 0): "MOVE_DOWN",
+                    (0, -1): "MOVE_UP",
+                    (0, 1): "MOVE_DOWN",
+                    (-1, 0): "MOVE_LEFT",
+                    (1, 0): "MOVE_RIGHT",
                     (0, 0): "STAY",
                     "INTERACT": "INTERACT"
                 }
+
                 action_labels = tuple(ACTION_MAP.get(a, a) for a in actions)
 
                 sparse_rewards = metadata.get("sparse_r_by_agent", [0, 0]) if metadata else [0, 0]
+                shaped_rewards = metadata.get("shaped_r_by_agent", [0, 0]) if metadata else [0, 0]
+                total_rewards = sparse_rewards[0] + sparse_rewards[1]
                 print(f"Timestep {timestep}:")
                 print(f"  State: {state}")
                 print(f"  Hashed State: {hash(state)}")
