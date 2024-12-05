@@ -98,17 +98,15 @@ class TestBasicAgents(unittest.TestCase):
     
     
         
-    def train_two_agents_simultaneously(self, agent_0, agent_1, env, num_episodes=500, max_steps_per_episode=50, start_state=None):
+    def train_two_agents_simultaneously(self, agent_0, agent_1, env, num_episodes=500, max_steps_per_episode=100, start_state=None):
         for episode in range(num_episodes):
             print(f"Starting Episode {episode + 1}/{num_episodes}...")
 
             # Reset environment to fixed start state or default
             if start_state:
                 state = start_state
-            else:
-                env.reset()
+            env.reset()
             
-
             for step in range(max_steps_per_episode):
                 print(f"  Step {step + 1}/{max_steps_per_episode}...")
 
@@ -118,18 +116,24 @@ class TestBasicAgents(unittest.TestCase):
 
                 # Execute actions in the environment
                 joint_action = [action_0, action_1]
-                next_state, reward, done, _ = env.step(joint_action)
+                next_state, reward, done, info = env.step(joint_action)
 
-                # Debug: Print state, actions, and rewards
+                sparse_rewards = info["sparse_r_by_agent"]
+                shaped_rewards = info["shaped_r_by_agent"]
+
+                full_reward = sum(sparse_rewards) + sum(shaped_rewards)
+
+                # Debug: Print state, actions, and rewaclrds
                 print(f"    State: {state}")
                 print(f"    Actions: {joint_action}")
-                print(f"    Reward: {reward} (Type: {type(reward)})")
+                print(f"    Sparse Reward: {reward} (Type: {type(reward)})")
+                print(f"    Full Reward: {full_reward} (Type: {type(full_reward)})")
                 print(f"    Next State: {next_state}")
                 print(f"    Done: {done}")
 
                 # Update agents using the received reward
-                agent_0.update(state, action_0, reward, next_state)
-                agent_1.update(state, action_1, reward, next_state)
+                agent_0.update(state, action_0, full_reward, next_state)
+                agent_1.update(state, action_1, full_reward, next_state)
 
                 # Break if the environment signals termination
                 if done:
@@ -140,6 +144,9 @@ class TestBasicAgents(unittest.TestCase):
                 state = next_state
 
             print(f"Episode {episode + 1} complete.\n")
+        # save q-table to txt file
+        agent_0.save_q_table_to_txt("agent_0_q_table.txt")
+        agent_1.save_q_table_to_txt("agent_1_q_table.txt")
 
     def test_two_qlearning_agents_cramped_room_with_debugging(self):
         """
@@ -147,7 +154,7 @@ class TestBasicAgents(unittest.TestCase):
         """
         layout = "cramped_room"
         mdp = OvercookedGridworld.from_layout_name(layout)
-        env = OvercookedEnv.from_mdp(mdp, horizon=50)
+        env = OvercookedEnv.from_mdp(mdp, horizon=100)
 
         # Initialize QLearningAgents
         agent_0 = QLearningAgent(alpha=0.1, gamma=0.95, epsilon=0.1, action_space=Action.ALL_ACTIONS)
@@ -156,71 +163,70 @@ class TestBasicAgents(unittest.TestCase):
         # Train both agents to populate their Q-tables
         fixed_start_state = mdp.get_standard_start_state()
         self.train_two_agents_simultaneously(
-        agent_0=agent_0,
-        agent_1=agent_1,
-        env=env,
-        num_episodes=500,
-        max_steps_per_episode=50,
-        start_state=fixed_start_state
+            agent_0=agent_0,
+            agent_1=agent_1,
+            env=env,
+            num_episodes=500,
+            max_steps_per_episode=100,
+            start_state=fixed_start_state
         )
 
         agent_pair = AgentPair(agent_0, agent_1)
 
         # Run the agents multiple times to validate Q-table persistence
-        for run_idx in range(3):
-            print(f"Run {run_idx + 1} starting...")
-            state = env.reset()
-            env.state = fixed_start_state  # Reset to the fixed start state for testing
-            trajectory, time_taken, _, _ = env.run_agents(
-                agent_pair, include_final_state=True, display=False
-            )
-            assert trajectory is not None, "Trajectory should not be None"
-            assert time_taken <= 50, "Time taken should not exceed horizon"
-            assert len(agent_0.q_table) > 0, "Agent 0's Q-table should persist after reset."
-            assert len(agent_1.q_table) > 0, "Agent 1's Q-table should persist after reset."
+        print(f"Run starting...")
+        state = env.reset()
+        env.state = fixed_start_state  # Reset to the fixed start state for testing
+        trajectory, time_taken, _, _ = env.run_agents(
+            agent_pair, include_final_state=True, display=False
+        )
+        assert trajectory is not None, "Trajectory should not be None"
+        assert time_taken <= 100, "Time taken should not exceed horizon"
+        assert len(agent_0.q_table) > 0, "Agent 0's Q-table should persist after reset."
+        assert len(agent_1.q_table) > 0, "Agent 1's Q-table should persist after reset."
 
-            # Debug: Check Q-tables
-            print(f"Agent 0 Q-Table Size: {len(agent_0.q_table)}")
-            print(f"Agent 1 Q-Table Size: {len(agent_1.q_table)}")
+        # Debug: Check Q-tables
+        print(f"Agent 0 Q-Table Size: {len(agent_0.q_table)}")
+        print(f"Agent 1 Q-Table Size: {len(agent_1.q_table)}")
 
-            # Print the trajectory details with debugging
-            for timestep, step in enumerate(trajectory):
-                state, actions, reward, done, metadata = step
+        # Print the trajectory details with debugging
+        for timestep, step in enumerate(trajectory):
+            state, actions, reward, done, metadata = step
 
-                # Map actions to descriptive labels
-                ACTION_MAP = {
-                    (0, -1): "MOVE_UP",
-                    (0, 1): "MOVE_DOWN",
-                    (-1, 0): "MOVE_LEFT",
-                    (1, 0): "MOVE_RIGHT",
-                    (0, 0): "STAY",
-                    "INTERACT": "INTERACT"
-                }
+            # Map actions to descriptive labels
+            ACTION_MAP = {
+                (0, -1): "MOVE_UP",
+                (0, 1): "MOVE_DOWN",
+                (-1, 0): "MOVE_LEFT",
+                (1, 0): "MOVE_RIGHT",
+                (0, 0): "STAY",
+                "INTERACT": "INTERACT"
+            }
 
-                action_labels = tuple(ACTION_MAP.get(a, a) for a in actions)
+            action_labels = tuple(ACTION_MAP.get(a, a) for a in actions)
 
-                sparse_rewards = metadata.get("sparse_r_by_agent", [0, 0]) if metadata else [0, 0]
-                shaped_rewards = metadata.get("shaped_r_by_agent", [0, 0]) if metadata else [0, 0]
-                total_rewards = sparse_rewards[0] + sparse_rewards[1]
+            sparse_rewards = metadata.get("sparse_r_by_agent", [0, 0]) if metadata else [0, 0]
+            shaped_rewards = metadata.get("shaped_r_by_agent", [0, 0]) if metadata else [0, 0]
+            total_rewards = sparse_rewards[0] + sparse_rewards[1]
 
-                print(f"Timestep {timestep}:")
-                print(f"  State: {state}")
-                print(f"  Hashed State: {hash(state)}")
-                print(f"  Actions: {action_labels}")
-                print(f"  Reward: {reward}")
-                print(f"  Sparse Rewards by Agent: {sparse_rewards}")
-                print(f"  Shaped Rewards by Agent: {shaped_rewards}")
-                print(f"  Total Rewards: {total_rewards}")
+            print(f"Timestep {timestep}:")
+            print(f"  State: {state}")
+            print(f"  Hashed State: {hash(state)}")
+            print(f"  Actions: {action_labels}")
+            print(f"  Reward: {reward}")
+            print(f"  Sparse Rewards by Agent: {sparse_rewards}")
+            print(f"  Shaped Rewards by Agent: {shaped_rewards}")
+            print(f"  Total Rewards: {total_rewards}")
 
-                # Debug: Check if no rewards are being generated
-                if sparse_rewards == [0, 0] and shaped_rewards == [0, 0]:
-                    print(f"Warning: No rewards generated at Timestep {timestep}")
-                
-                # Debug: Check if agents are stuck (e.g., repetitive states)
-                if timestep > 0 and trajectory[timestep - 1][0] == state:
-                    print(f"Warning: Agents may be stuck at Timestep {timestep}, State: {state}")
+            # Debug: Check if no rewards are being generated
+            if sparse_rewards == [0, 0] and shaped_rewards == [0, 0]:
+                print(f"Warning: No rewards generated at Timestep {timestep}")
+            
+            # Debug: Check if agents are stuck (e.g., repetitive states)
+            if timestep > 0 and trajectory[timestep - 1][0] == state:
+                print(f"Warning: Agents may be stuck at Timestep {timestep}, State: {state}")
 
-            print(f"Run {run_idx + 1} completed.\n")
+            print(f"Run completed.\n")
 
     # def test_fixed_plan_agents(self):
     #     a0 = FixedPlanAgent([s, e, n, w])

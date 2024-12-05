@@ -1035,11 +1035,13 @@ class OvercookedState(object):
 BASE_REW_SHAPING_PARAMS = {
     "PLACEMENT_IN_POT_REW": 3,
     "DISH_PICKUP_REWARD": 3,
+    "ONION_PICKUP_REWARD": 3,
     "SOUP_PICKUP_REWARD": 5,
-    "DISH_DISP_DISTANCE_REW": 1,
-    "POT_DISTANCE_REW": 1,
-    "SOUP_DISTANCE_REW": 1,
-    "ONION_DISTANCE_REW": 1
+    "DISH_DISP_DISTANCE_REW": 2,
+    "POT_DISTANCE_REW": 2,
+    "SOUP_DISTANCE_REW": 2,
+    "SERVE_DISTANCE_REW": 2,
+    "ONION_DISTANCE_REW": 2
 }
 
 EVENT_TYPES = [
@@ -1510,6 +1512,11 @@ class OvercookedGridworld(object):
                 self.log_object_pickup(
                     events_infos, new_state, "onion", pot_states, player_idx
                 )
+
+                if self.is_ingredient_pickup_useful(new_state, pot_states, player_idx):
+                    shaped_reward[player_idx] += self.reward_shaping_params[
+                        "ONION_PICKUP_REWARD"
+                    ]
 
                 # Onion pickup from dispenser
                 obj = ObjectState("onion", pos)
@@ -3279,96 +3286,81 @@ class OvercookedGridworld(object):
         """
         Adding reward shaping based on distance to certain features.
         """
+        # distance based reward shaping
         distance_based_shaped_reward = 0
 
+        # get all the pots
+        pot_states = self.get_pot_states(state)
+        num_inc = len(pot_states["empty"]) + sum(
+            len(v) for k, v in pot_states.items() if k.endswith("_items")
+            )
+        num_cooking = len(pot_states["cooking"])
+        num_ready = len(pot_states["ready"])
 
-        pot_states = self.get_pot_states(new_state)
+        old_player_state = state.players[player_idx]
+        new_player_state = new_state.players[player_idx]
 
-        ready_pots = pot_states["ready"]
-        cooking_pots = ready_pots + pot_states["cooking"]
-        nearly_ready_pots = cooking_pots + [
-            pot
-            for key, pots in pot_states.items()
-            if key.endswith("_items") and key[:-6].isdigit()  # Check for "x_items" pattern
-            for pot in pots  # Add each pot in the list
-        ]
-        dishes_in_play = len(new_state.player_objects_by_type['dish'])
-        # Linearly increase reward depending on vicinity to certain features, where distance of 10 achieves 0 reward
-        max_dist = 8
+        # only one pot, one serving area in the game
+        pot_loc = self.get_pot_locations()[0]
+        serving_loc = self.get_serving_locations()[0]
 
-        player_new = new_state.players[player_idx]
-        player_old = state.players[player_idx]
-
-        if player_new.held_object is not None and player_new.held_object.name == 'dish' and len(nearly_ready_pots) >= dishes_in_play:
-            min_dist_to_pot_new = np.inf
-            min_dist_to_pot_old = np.inf
-            for pot in nearly_ready_pots:
-                new_dist = np.linalg.norm(np.array(pot) - np.array(player_new.position))
-                old_dist = np.linalg.norm(np.array(pot) - np.array(player_old.position))
-                if new_dist < min_dist_to_pot_new:
-                    min_dist_to_pot_new = new_dist
-                if old_dist < min_dist_to_pot_old:
-                    min_dist_to_pot_old = old_dist
-            if min_dist_to_pot_old > min_dist_to_pot_new:
-                distance_based_shaped_reward += self.reward_shaping_params["POT_DISTANCE_REW"] * (1 - min(min_dist_to_pot_new / max_dist, 1))
+        # if pot needs onion and not holding onion, go to onion
+        if num_inc != 0 and old_player_state.held_object and old_player_state.held_object.name != 'onion':
+            # give rewards if you are closer to onions
+            # find closest onion to old player state
+            onion_locs = self.get_onion_dispenser_locations()
+            old_dist_to_onion = np.inf
+            min_onion_loc = -1
+            for onion_loc in onion_locs:
+                dist = np.linalg.norm(np.array(onion_loc) - np.array(old_player_state.position))
+                if dist < old_dist_to_onion:
+                    old_dist_to_onion = dist
+                    min_onion_loc = onion_loc
         
-        # if pots are cooking, no dishes in play, and player is not holding anything -> go to nearest dish
-        if player_new.held_object is None and len(cooking_pots) > 0 and dishes_in_play == 0:
-            min_dist_to_d_new = np.inf
-            min_dist_to_d_old = np.inf
-            for serving_loc in self.terrain_pos_dict['D']:
-                new_dist = np.linalg.norm(np.array(serving_loc) - np.array(player_new.position))
-                old_dist = np.linalg.norm(np.array(serving_loc) - np.array(player_old.position))
-                if new_dist < min_dist_to_d_new:
-                    min_dist_to_d_new = new_dist
-                if old_dist < min_dist_to_d_old:
-                    min_dist_to_d_old = old_dist
-                
-
-            if min_dist_to_d_old > min_dist_to_d_new:
-                distance_based_shaped_reward += self.reward_shaping_params["DISH_DISP_DISTANCE_REW"] * (1 - min(min_dist_to_d_new / max_dist, 1))
-
-        if player_new.held_object is not None and player_new.held_object.name == 'soup':
-            min_dist_to_s_new = np.inf
-            min_dist_to_s_old = np.inf
-            for serving_loc in self.terrain_pos_dict['S']:
-                new_dist = np.linalg.norm(np.array(serving_loc) - np.array(player_new.position))
-                old_dist = np.linalg.norm(np.array(serving_loc) - np.array(player_old.position))
-                if new_dist < min_dist_to_s_new:
-                    min_dist_to_s_new = new_dist
-
-                if old_dist < min_dist_to_s_old:
-                    min_dist_to_s_old = old_dist
-
-            if min_dist_to_s_old > min_dist_to_s_new:
-                distance_based_shaped_reward += self.reward_shaping_params["SOUP_DISTANCE_REW"] * (1 - min(min_dist_to_s_new / max_dist, 1))
+            # if you are closer to that same onion in new state, give reward
+            new_dist_to_onion = np.linalg.norm(np.array(min_onion_loc) - np.array(new_player_state.position))
+            if new_dist_to_onion < old_dist_to_onion:
+                distance_based_shaped_reward += self.reward_shaping_params["ONION_DISTANCE_REW"]
         
-        # held object is onion, no ready pots, no dishes in play -> go to nearest pot
-        if player_new.held_object is not None and player_new.held_object.name == 'onion' and len(nearly_ready_pots) == 0 and dishes_in_play == 0:
-            min_dist_to_pot_new = np.inf
-            min_dist_to_pot_old = np.inf
-            for pot in self.terrain_pos_dict['P']:
-                new_dist = np.linalg.norm(np.array(pot) - np.array(player_new.position))
-                old_dist = np.linalg.norm(np.array(pot) - np.array(player_old.position))
-                if new_dist < min_dist_to_pot_new:
-                    min_dist_to_pot_new = new_dist
-                if old_dist < min_dist_to_pot_old:
-                    min_dist_to_pot_old = old_dist
-            if min_dist_to_pot_old > min_dist_to_pot_new:
-                distance_based_shaped_reward += self.reward_shaping_params["POT_DISTANCE_REW"] * (1 - min(min_dist_to_pot_new / max_dist, 1))
+        # if pot needs onion and holding onion, go to pot
+        if num_inc != 0 and old_player_state.held_object and old_player_state.held_object.name == 'onion':
+            # give reward if you are closer to pot
+            old_dist_to_pot = np.linalg.norm(np.array(pot_loc) - np.array(old_player_state.position))
+            new_dist_to_pot = np.linalg.norm(np.array(pot_loc) - np.array(new_player_state.position))
+            print("checking onion->pot disatance: old_pos: {}, new_pos: {}".format(old_dist_to_pot, new_dist_to_pot))
+            if new_dist_to_pot < old_dist_to_pot:
+                # for now, same reward for all distances
+                print("rewarding onion->pot")
+                distance_based_shaped_reward += self.reward_shaping_params["POT_DISTANCE_REW"]
 
-        # no held object, no nearly ready pots, no dishes in play -> go to nearest onion
-        if player_new.held_object is None and len(nearly_ready_pots) == 0 and dishes_in_play == 0:
-            min_dist_to_onion_new = np.inf
-            min_dist_to_onion_old = np.inf
-            for onion_loc in self.terrain_pos_dict['O']:
-                new_dist = np.linalg.norm(np.array(onion_loc) - np.array(player_new.position))
-                old_dist = np.linalg.norm(np.array(onion_loc) - np.array(player_old.position))
-                if new_dist < min_dist_to_onion_new:
-                    min_dist_to_onion_new = new_dist
-                if old_dist < min_dist_to_onion_old:
-                    min_dist_to_onion_old = old_dist
-            if min_dist_to_onion_old > min_dist_to_onion_new:
-                distance_based_shaped_reward += self.reward_shaping_params["ONION_DISTANCE_REW"] * (1 - min(min_dist_to_onion_new / max_dist, 1))
+        # if pot is cooking, and you are not holding dish, 
+        if num_cooking != 0 and old_player_state.held_object != 'dish':
+            # give rewards if you are closer to dish
+            dish_locs = self.get_dish_dispenser_locations()
+            old_dist_to_dish = np.inf
+            min_dish_loc = -1
+            for dish_loc in dish_locs:
+                dist = np.linalg.norm(np.array(dish_loc) - np.array(old_player_state.position))
+                if dist < old_dist_to_dish:
+                    old_dist_to_dish = dist
+                    min_dish_loc = dish_loc
+            
+            new_dist_to_dish = np.linalg.norm(np.array(min_dish_loc) - np.array(new_player_state.position))
+            if new_dist_to_dish < old_dist_to_dish:
+                distance_based_shaped_reward += self.reward_shaping_params["DISH_DISP_DISTANCE_REW"]
+        
+        if num_ready != 0 and old_player_state.held_object and old_player_state.held_object.name == 'dish':
+            # give rewards if you are closer to pot:
+            old_dist_to_pot = np.linalg.norm(np.array(pot_loc) - np.array(old_player_state.position))
+            new_dist_to_pot = np.linalg.norm(np.array(pot_loc) - np.array(new_player_state.position))
+            if new_dist_to_pot < old_dist_to_pot:
+                distance_based_shaped_reward += self.reward_shaping_params["POT_DISTANCE_REW"]
+        
+        if old_player_state.held_object and old_player_state.held_object.name == 'soup':
+            # give rewards if you are closer to serving area
+            old_dist_to_serving = np.linalg.norm(np.array(serving_loc) - np.array(old_player_state.position))
+            new_dist_to_serving = np.linalg.norm(np.array(serving_loc) - np.array(new_player_state.position))
+            if new_dist_to_serving < old_dist_to_serving:
+                distance_based_shaped_reward += self.reward_shaping_params["SERVE_DISTANCE_REW"]
 
         return distance_based_shaped_reward

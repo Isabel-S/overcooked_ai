@@ -631,6 +631,11 @@ class QLearningAgent(Agent):
     def reset(self):
         self.agent_index = None
         self.mdp = None
+    
+    def save_q_table_to_txt(self, path):
+        with open(path, 'w') as f:
+            for (state_hash, action), q_value in self.q_table.items():
+                f.write(f"{state_hash} {action} {q_value}\n")
 
 
 # Deprecated. Need to fix Heuristic to work with the new MDP to reactivate Planning
