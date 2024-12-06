@@ -1033,10 +1033,10 @@ class OvercookedState(object):
 
 
 BASE_REW_SHAPING_PARAMS = {
-    "PLACEMENT_IN_POT_REW": 4,
+    "PLACEMENT_IN_POT_REW": 8,
     "DISH_PICKUP_REWARD": 3,
     "ONION_PICKUP_REWARD": 3,
-    "SOUP_PICKUP_REWARD": 6,
+    "SOUP_PICKUP_REWARD": 10,
     "DISH_DISP_DISTANCE_REW": 2,
     "POT_DISTANCE_REW": 2,
     "SOUP_DISTANCE_REW": 2,
@@ -1548,7 +1548,6 @@ class OvercookedGridworld(object):
                     and self.soup_to_be_cooked_at_location(new_state, i_pos)
                 ):
                     soup = new_state.get_object(i_pos)
-                    # print("just made soup state")
                     soup.begin_cooking()
 
             elif terrain_type == "P" and player.has_object():

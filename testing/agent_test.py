@@ -153,7 +153,7 @@ class TestBasicAgents(unittest.TestCase):
         Test two QLearningAgents on the 'cramped_room' layout, including debugging statements.
         """
         layout = "cramped_room"
-        mdp = OvercookedGridworld.from_layout_name(layout, old_dynamics=False)
+        mdp = OvercookedGridworld.from_layout_name(layout, old_dynamics=True)
         env = OvercookedEnv.from_mdp(mdp, horizon=100)
 
         # Initialize QLearningAgents
