@@ -1548,6 +1548,7 @@ class OvercookedGridworld(object):
                     and self.soup_to_be_cooked_at_location(new_state, i_pos)
                 ):
                     soup = new_state.get_object(i_pos)
+                    # print("just made soup state")
                     soup.begin_cooking()
 
             elif terrain_type == "P" and player.has_object():
@@ -1725,7 +1726,7 @@ class OvercookedGridworld(object):
                 if self.old_dynamics and (
                     not obj.is_cooking
                     and not obj.is_ready
-                    and len(obj.ingredients) == 3
+                    and len(obj.ingredients) == 3 # changed this to 3 instead of > 0
                 ):
                     obj.begin_cooking()
                 if obj.is_cooking:
@@ -1933,7 +1934,7 @@ class OvercookedGridworld(object):
             obj.name == "soup"
             and not obj.is_cooking
             and not obj.is_ready
-            and len(obj.ingredients) > 0
+            and len(obj.ingredients) == 3
         )
 
     def _check_valid_state(self, state):
