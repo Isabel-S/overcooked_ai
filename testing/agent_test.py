@@ -98,7 +98,7 @@ class TestBasicAgents(unittest.TestCase):
     
     
         
-    def train_two_agents_simultaneously(self, agent_0, agent_1, env, num_episodes=500, max_steps_per_episode=100, start_state=None):
+    def train_two_agents_simultaneously(self, agent_0, agent_1, env, num_episodes=5000, max_steps_per_episode=100, start_state=None):
         for episode in range(num_episodes):
             print(f"Starting Episode {episode + 1}/{num_episodes}...")
 
