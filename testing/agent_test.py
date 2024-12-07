@@ -107,6 +107,7 @@ class TestBasicAgents(unittest.TestCase):
                 state = start_state
             env.reset()
             
+            rewards_so_far = 0
             for step in range(max_steps_per_episode):
                 print(f"  Step {step + 1}/{max_steps_per_episode}...")
 
@@ -121,6 +122,8 @@ class TestBasicAgents(unittest.TestCase):
                 sparse_rewards = info["sparse_r_by_agent"]
                 shaped_rewards = info["shaped_r_by_agent"]
 
+                rewards_so_far += reward
+
                 full_reward = sum(sparse_rewards) + sum(shaped_rewards)
 
                 # Debug: Print state, actions, and rewaclrds
@@ -128,6 +131,7 @@ class TestBasicAgents(unittest.TestCase):
                 print(f"    Actions: {joint_action}")
                 print(f"    Sparse Reward: {reward} (Type: {type(reward)})")
                 print(f"    Full Reward: {full_reward} (Type: {type(full_reward)})")
+                print(f"    Rewards So Far: {rewards_so_far}")
                 print(f"    Next State: {next_state}")
                 print(f"    Done: {done}")
 
@@ -166,7 +170,7 @@ class TestBasicAgents(unittest.TestCase):
             agent_0=agent_0,
             agent_1=agent_1,
             env=env,
-            num_episodes=500,
+            num_episodes=10000,
             max_steps_per_episode=100,
             start_state=fixed_start_state
         )
@@ -189,6 +193,7 @@ class TestBasicAgents(unittest.TestCase):
         print(f"Agent 0 Q-Table Size: {len(agent_0.q_table)}")
         print(f"Agent 1 Q-Table Size: {len(agent_1.q_table)}")
 
+        rewards_so_far = 0
         # Print the trajectory details with debugging
         for timestep, step in enumerate(trajectory):
             state, actions, reward, done, metadata = step
@@ -207,7 +212,8 @@ class TestBasicAgents(unittest.TestCase):
 
             sparse_rewards = metadata.get("sparse_r_by_agent", [0, 0]) if metadata else [0, 0]
             shaped_rewards = metadata.get("shaped_r_by_agent", [0, 0]) if metadata else [0, 0]
-            total_rewards = sparse_rewards[0] + sparse_rewards[1]
+
+            rewards_so_far += reward
 
             print(f"Timestep {timestep}:")
             print(f"  State: {state}")
@@ -216,7 +222,7 @@ class TestBasicAgents(unittest.TestCase):
             print(f"  Reward: {reward}")
             print(f"  Sparse Rewards by Agent: {sparse_rewards}")
             print(f"  Shaped Rewards by Agent: {shaped_rewards}")
-            print(f"  Total Rewards: {total_rewards}")
+            print(f"  Rewards So Far: {rewards_so_far}")
 
             # Debug: Check if no rewards are being generated
             if sparse_rewards == [0, 0] and shaped_rewards == [0, 0]:

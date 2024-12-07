@@ -1035,16 +1035,18 @@ class OvercookedState(object):
 BASE_REW_SHAPING_PARAMS = {
     #"PLACEMENT_IN_POT_REW": 8,
     "PLACEMENT_IN_POT_REW": 18,
-    "DISH_PICKUP_REWARD": 3,
-    "ONION_PICKUP_REWARD": 3,
+    "DISH_PICKUP_REWARD": 4,
+    "ONION_PICKUP_REWARD": 4,
     "SOUP_PICKUP_REWARD": 10,
     # "DISH_DISP_DISTANCE_REW": 2,
     "DISH_DISP_DISTANCE_REW": 5,
     "POT_DISTANCE_REW": 2,
     "SOUP_DISTANCE_REW": 2,
     #"SERVE_DISTANCE_REW": 2,
-    "SERVE_DISTANCE_REW" : 5,
-    "ONION_DISTANCE_REW": 2
+    "SERVE_DISTANCE_REW" : 12,
+    "ONION_DISTANCE_REW": 2,
+    "NOOP_REW": -2,
+    "BOTH_HOLDING_DISH_REW": -1
 }
 
 EVENT_TYPES = [
@@ -1439,7 +1441,7 @@ class OvercookedGridworld(object):
         for player_idx, (player, action) in enumerate(
             zip(new_state.players, joint_action)
         ):
-            shaped_reward_by_agent[player_idx] += float(self.calculate_distance_based_shaped_reward(state, new_state, player_idx))
+            shaped_reward_by_agent[player_idx] += float(self.calculate_distance_based_shaped_reward(state, new_state, player_idx, joint_action))
             
         infos = {
             "event_infos": events_infos,
@@ -1624,14 +1626,15 @@ class OvercookedGridworld(object):
         The player receives 0 if recipe not in all_orders, receives base value * order_bonus
         if recipe is in bonus orders, and receives base value otherwise
         """
+
         if not discounted:
             if not recipe in state.all_orders:
                 return 0
 
             if not recipe in state.bonus_orders:
-                return recipe.value
+                return 200
 
-            return self.order_bonus * recipe.value
+            return self.order_bonus * 200
         else:
             # Calculate missing ingredients needed to complete recipe
             missing_ingredients = list(recipe.ingredients)
@@ -1653,7 +1656,7 @@ class OvercookedGridworld(object):
                 potential_params["pot_tomato_steps"],
             )
 
-            return (
+            return 200 + (
                 gamma**recipe.time
                 * gamma ** (pot_onion_steps * n_onions)
                 * gamma ** (pot_tomato_steps * n_tomatoes)
@@ -3285,7 +3288,7 @@ class OvercookedGridworld(object):
     # DEPRECATED #
     ##############
 
-    def calculate_distance_based_shaped_reward(self, state, new_state, player_idx):
+    def calculate_distance_based_shaped_reward(self, state, new_state, player_idx, joint_action):
         """
         Adding reward shaping based on distance to certain features.
         """
@@ -3306,6 +3309,18 @@ class OvercookedGridworld(object):
         # only one pot, one serving area in the game
         pot_loc = self.get_pot_locations()[0]
         serving_loc = self.get_serving_locations()[0]
+
+        # if the state is the same, and the actions were not noop, give a negative reward
+        if old_player_state == new_player_state and joint_action[player_idx] != (0,0):
+            distance_based_shaped_reward += self.reward_shaping_params["NOOP_REW"]
+        
+        # if both players are holding a dish give a negative reward
+        if new_player_state.held_object and new_player_state.held_object.name == 'dish':
+            # other player is 1 if player_idx is 0, 0 if player_idx is 1
+            other_player_idx = 1 - player_idx
+            other_player_state = new_state.players[other_player_idx]
+            if other_player_state.held_object and other_player_state.held_object.name == 'dish':
+                distance_based_shaped_reward += self.reward_shaping_params["BOTH_HOLDING_DISH_REW"]
 
         # if pot needs onion and not holding onion, go to onion
         if num_inc != 0 and old_player_state.held_object and old_player_state.held_object.name != 'onion':
@@ -3330,10 +3345,8 @@ class OvercookedGridworld(object):
             # give reward if you are closer to pot
             old_dist_to_pot = np.linalg.norm(np.array(pot_loc) - np.array(old_player_state.position))
             new_dist_to_pot = np.linalg.norm(np.array(pot_loc) - np.array(new_player_state.position))
-            print("checking onion->pot disatance: old_pos: {}, new_pos: {}".format(old_dist_to_pot, new_dist_to_pot))
             if new_dist_to_pot < old_dist_to_pot:
                 # for now, same reward for all distances
-                print("rewarding onion->pot")
                 distance_based_shaped_reward += self.reward_shaping_params["POT_DISTANCE_REW"]
 
         # if pot is cooking, and you are not holding dish, 
@@ -3365,5 +3378,9 @@ class OvercookedGridworld(object):
             new_dist_to_serving = np.linalg.norm(np.array(serving_loc) - np.array(new_player_state.position))
             if new_dist_to_serving < old_dist_to_serving:
                 distance_based_shaped_reward += self.reward_shaping_params["SERVE_DISTANCE_REW"]
+            
+            # if distance increased, give negative reward
+            if new_dist_to_serving > old_dist_to_serving:
+                distance_based_shaped_reward += self.reward_shaping_params["SERVE_DISTANCE_REW"] * -1
 
         return distance_based_shaped_reward
